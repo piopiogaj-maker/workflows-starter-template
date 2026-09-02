@@ -8,6 +8,7 @@ import { WORKFLOW_STEPS } from "./types";
 function App() {
 	const [instanceId, setInstanceId] = useState<string | null>(null);
 	const [isStarting, setIsStarting] = useState(false);
+	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const workflowState = useWorkflowWebSocket(instanceId);
 
 	useEffect(() => {
@@ -19,16 +20,42 @@ function App() {
 		}
 	}, [workflowState.workflowStatus]);
 
+	// A failed workflow leaves the demo stuck, so reset and explain
 	useEffect(() => {
-		if (
-			workflowState.workflowStatus === "running" &&
-			workflowState.currentStep
-		) {
+		if (workflowState.workflowStatus === "error") {
+			setErrorMessage("Workflow ended with an error. You can try again.");
+			const timer = setTimeout(() => {
+				setInstanceId(null);
+			}, 2000);
+			return () => clearTimeout(timer);
+		}
+	}, [workflowState.workflowStatus]);
+
+	useEffect(() => {
+		if (workflowState.workflowStatus !== "idle") {
 			setIsStarting(false);
 		}
-	}, [workflowState.workflowStatus, workflowState.currentStep]);
+	}, [workflowState.workflowStatus]);
+
+	// If the workflow started but live updates never arrive, recover instead
+	// of leaving the Start button pulsing forever
+	useEffect(() => {
+		if (!isStarting || workflowState.workflowStatus !== "idle") return;
+
+		const timer = setTimeout(() => {
+			setInstanceId(null);
+			setIsStarting(false);
+			setErrorMessage(
+				"Couldn't connect to workflow updates. Please try again.",
+			);
+		}, 8000);
+		return () => clearTimeout(timer);
+	}, [isStarting, workflowState.workflowStatus]);
 
 	const handleStartWorkflow = async () => {
+		if (isStarting) return;
+
+		setErrorMessage(null);
 		setIsStarting(true);
 
 		try {
@@ -43,7 +70,7 @@ function App() {
 			const data = await response.json();
 			setInstanceId(data.instanceId);
 		} catch {
-			alert("Failed to start workflow. Please try again.");
+			setErrorMessage("Failed to start workflow. Please try again.");
 			setIsStarting(false);
 		}
 	};
@@ -91,6 +118,22 @@ function App() {
 				</div>
 			</header>
 
+			{errorMessage && (
+				<div
+					role="alert"
+					className="relative z-10 mx-6 mb-4 flex items-start justify-between gap-4 rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-700 ring-1 ring-red-500/30 dark:bg-red-500/15 dark:text-red-300 dark:ring-red-400/30"
+				>
+					<p>{errorMessage}</p>
+					<button
+						onClick={() => setErrorMessage(null)}
+						className="shrink-0 rounded p-0.5 font-medium text-red-700/80 transition-colors hover:bg-red-500/10 hover:text-red-900 dark:text-red-300/80 dark:hover:text-red-100"
+						aria-label="Dismiss error"
+					>
+						Dismiss
+					</button>
+				</div>
+			)}
+
 			{/* Main content - unified canvas */}
 			<main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative z-10">
 				{/* Left side - Code (responsive width) */}
@@ -113,6 +156,7 @@ function App() {
 						workflowStatus={workflowState.workflowStatus}
 						onStartWorkflow={handleStartWorkflow}
 						isStarting={isStarting}
+						wsConnected={workflowState.wsConnected}
 					/>
 				</div>
 			</main>
