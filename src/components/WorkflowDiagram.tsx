@@ -14,6 +14,7 @@ interface WorkflowDiagramProps {
 	workflowStatus: "idle" | "running" | "completed" | "error";
 	onStartWorkflow: () => void;
 	isStarting: boolean;
+	wsConnected: boolean;
 }
 
 interface NodePosition {
@@ -29,9 +30,12 @@ export function WorkflowDiagram({
 	workflowStatus,
 	onStartWorkflow,
 	isStarting,
+	wsConnected,
 }: WorkflowDiagramProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [containerWidth, setContainerWidth] = useState(400);
+	const [approvalInFlight, setApprovalInFlight] = useState(false);
+	const [approvalError, setApprovalError] = useState(false);
 
 	// Measure container width and update on resize
 	useEffect(() => {
@@ -47,10 +51,11 @@ export function WorkflowDiagram({
 	}, []);
 
 	const handleApprove = async (approved: boolean) => {
-		if (!instanceId) return;
+		if (!instanceId || approvalInFlight) return;
 
+		setApprovalInFlight(true);
 		try {
-			await fetch(`/api/workflow/event/${instanceId}`, {
+			const response = await fetch(`/api/workflow/event/${instanceId}`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -58,8 +63,14 @@ export function WorkflowDiagram({
 					comment: approved ? "Approved via UI" : "Rejected via UI",
 				}),
 			});
+			if (!response.ok) {
+				throw new Error("Failed to send approval");
+			}
+			setApprovalError(false);
 		} catch {
-			// Silently fail - workflow will timeout if event not received
+			setApprovalError(true);
+		} finally {
+			setApprovalInFlight(false);
 		}
 	};
 
@@ -131,6 +142,20 @@ export function WorkflowDiagram({
 
 	return (
 		<div className="relative overflow-auto h-full">
+			{/* Live connection indicator */}
+			{workflowStatus !== "idle" && workflowStatus !== "completed" && (
+				<div className="absolute right-6 top-4 z-20 flex items-center gap-1.5 rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-medium text-neutral-600 shadow-sm ring-1 ring-black/5 backdrop-blur-xl dark:bg-neutral-900/70 dark:text-neutral-300 dark:ring-white/10">
+					<span
+						className={`h-1.5 w-1.5 rounded-full ${
+							wsConnected
+								? "bg-emerald-500 shadow-[0_0_6px] shadow-emerald-500/60"
+								: "bg-red-500"
+						}`}
+					/>
+					{wsConnected ? "Live" : "Disconnected"}
+				</div>
+			)}
+
 			{/* Diagram content */}
 			<div
 				ref={containerRef}
@@ -371,10 +396,17 @@ export function WorkflowDiagram({
 
 									<button
 										onClick={() => handleApprove(true)}
-										className="relative px-4 py-2 backdrop-blur-xl bg-neutral-900/90 dark:bg-neutral-700/90 hover:bg-neutral-700 text-white text-xs font-medium rounded-lg transition-all shadow-xl whitespace-nowrap"
+										disabled={approvalInFlight}
+										className="relative px-4 py-2 backdrop-blur-xl bg-neutral-900/90 dark:bg-neutral-700/90 hover:bg-neutral-700 text-white text-xs font-medium rounded-lg transition-all shadow-xl whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
 									>
-										Approve
+										{approvalInFlight ? "Sending…" : "Approve"}
 									</button>
+
+									{approvalError && (
+										<p className="relative mt-2 max-w-[260px] text-center text-xs text-red-600 dark:text-red-400">
+											Couldn&apos;t send approval. Please try again.
+										</p>
+									)}
 								</div>
 							);
 						}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "ports": {
+    "preview": 5173,
+    "additional": {
+      "app": 5173
+    }
+  },
+  "scripts": {
+    "setup": {"enabled": true, "command": "npm install"},
+    "run": {"enabled": true, "command": "npm run dev"},
+    "archive": {"enabled": true, "command": null},
+    "check": {"enabled": true, "command": null}
+  },
+  "mcpServers": []
+}
